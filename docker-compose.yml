@@ -1,0 +1,92 @@
+version: '3.8'
+services:
+
+  # -----------------------------------------------------------------------
+  # PROXY - traefik
+  # -----------------------------------------------------------------------
+  proxy:
+    # The official v2 Traefik docker image
+    image: traefik:v2.9
+    # Enables the web UI and tells Traefik to listen to docker
+    command: --api.insecure=true --providers.docker
+    restart: always
+    networks:
+      - netw
+    ports:
+      # The HTTP port
+      - "80:80"
+      # The Web UI (enabled by --api.insecure=true)
+      - "8080:8080"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+  # -----------------------------------------------------------------------
+  # FRONT - nuxt3
+  # -----------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./services/frontend
+      target: dev
+    ports:
+      - 3000:3000
+      - 24678:24678
+    networks:
+      - netw
+    volumes:
+      - ./services/frontend/src:/app/src
+    env_file:
+      - .env
+    restart: always
+    labels:
+      - traefik.http.routers.frontend.rule=Host(`localhost`)
+    depends_on:
+      - api
+
+  
+
+  # -----------------------------------------------------------------------
+  # CORE - nestjs
+  # -----------------------------------------------------------------------
+  api:
+    build:
+      context: ./services/api
+      target: dev
+    networks:
+      - netw
+    volumes:
+      - ./services/api/src:/app/src
+
+    env_file:
+      - .env
+    restart: always
+
+    labels:
+      - traefik.http.routers.api.rule=Host(`localhost`) && PathPrefix(`/api/v1`)
+      - traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api/v1
+      - traefik.http.routers.api.middlewares=api-stripprefix
+    depends_on:
+      - db
+
+  
+  # -----------------------------------------------------------------------
+  # DATABASE - mariadb
+  # -----------------------------------------------------------------------
+  db:
+    image: mariadb:10.7.8
+    restart: always
+    networks:
+      - netw
+    ports:
+      - 3306:3306
+    volumes:
+      - db-data:/var/lib/mysql
+    env_file:
+      - .env
+    
+      
+volumes:
+  db-data:
+    driver: local
+
+networks:
+  netw:
